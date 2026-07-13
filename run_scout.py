@@ -101,10 +101,18 @@ def main():
     ax2.set_title(f"Cross-section (y–z, x = {cx:.2f} µm)")
     plt.tight_layout()
     plt.show()
+    plt.close("all")
 
-    # 6. Cloud auth check
+    # 6. Submit scout simulation to Tidy3D cloud
     web.test()
-    print(f"  - Ready to run: web.run(..., path={RESULTS_DIR / 'scout.hdf5'})")
+    result_path = RESULTS_DIR / "scout.hdf5"
+    sim_data = web.run(
+        sim,
+        task_name="SiV_scout",
+        path=result_path,
+    )
+    print(f"  - Results saved : {result_path}")
+    print(f"  - Monitor names : {list(sim_data.monitor_data.keys())}")
 
 
 if __name__ == "__main__":

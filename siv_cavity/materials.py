@@ -12,4 +12,5 @@ def n_diamond(wavelength_um):
 
 
 diamond_medium = td.Sellmeier(coeffs=[(0.3306, 0.175**2), (4.3356, 0.106**2)])
+diamond_medium = td.Medium(permittivity=2.404**2)
 air_medium = td.Medium(permittivity=1.0)

@@ -9,3 +9,6 @@ wheels/
 # Virtual environments
 .venv
 .env
+
+# IDE (PyCharm / IntelliJ) — local editor settings, not needed for the project
+.idea/

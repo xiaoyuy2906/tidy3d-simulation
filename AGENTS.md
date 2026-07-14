@@ -21,10 +21,11 @@ Main pieces:
 - Python is pinned to 3.12.12 via `.python-version`; `uv` provisions it automatically.
 
 ### Running things
-- Execute any Python against the project env with `uv run python ...`.
+- Execute any Python against the project env with `uv run python ...`, e.g.
+ `uv run python run_scout.py` (needs Tidy3D credentials for the final cloud submit step).
 - Jupyter is intentionally **not** a project dependency. Run it on demand without editing
-  `pyproject.toml`, e.g. `uv run --with jupyterlab jupyter lab` (interactive) or
-  `uv run --with jupyterlab jupyter nbconvert --to notebook --execute NanobeamCavity.ipynb`.
+ `pyproject.toml`, e.g. `uv run --with jupyterlab jupyter lab` (interactive) or
+ `uv run --with jupyterlab jupyter nbconvert --to notebook --execute examples/NanobeamCavity.ipynb`.
 
 ### Tidy3D cloud (important gotcha)
 - Tidy3D is a **cloud** FDTD solver. Any `tidy3d.web` call (`web.test`, `web.upload`,

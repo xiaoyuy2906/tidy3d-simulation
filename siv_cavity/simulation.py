@@ -326,13 +326,73 @@ class SiVNanobeamSimulationSetup:
             interval_space=(1, 1, 1),
         )
 
+    def create_farfield_monitors(self, geom: Dict) -> List[td.Monitor]:
+        """Upward far-field projection monitors (Cartesian / k-space / angular).
+
+        The near-field sampling plane is placed above the beam but inside the
+        simulation domain (not in the PML)."""
+        z_mon = 0.35 * geom["size_z"]
+        size_x = 0.8 * geom["size_x"]
+        size_y = 0.8 * geom["size_y"]
+
+        cartesian = td.FieldProjectionCartesianMonitor(
+            center=(geom["cx"], geom["cy"], z_mon),
+            size=(size_x, size_y, 0.0),
+            freqs=[self.f0_center],
+            name="farfield_cartesian",
+            x=list(np.linspace(-4, 4, 50)),
+            y=list(np.linspace(-4, 4, 50)),
+            proj_axis=2,
+            proj_distance=1e6,
+        )
+        kspace = td.FieldProjectionKSpaceMonitor(
+            center=(geom["cx"], geom["cy"], z_mon),
+            size=(size_x, size_y, 0.0),
+            freqs=[self.f0_center],
+            name="farfield_kspace",
+            ux=list(np.linspace(-0.95, 0.95, 40)),
+            uy=list(np.linspace(-0.95, 0.95, 40)),
+            proj_axis=2,
+        )
+        angles = td.FieldProjectionAngleMonitor(
+            center=(geom["cx"], geom["cy"], z_mon),
+            size=(size_x, size_y, 0.0),
+            freqs=[self.f0_center],
+            name="farfield_angles",
+            theta=list(np.linspace(0.0, np.pi / 2, 100)),
+            phi=list(np.linspace(0.0, 2 * np.pi, 200)),
+            proj_distance=1e6,
+        )
+        return [cartesian, kspace, angles]
+
     def _grid_spec(self, min_steps_per_wvl: int) -> td.GridSpec:
         return td.GridSpec.auto(
             min_steps_per_wvl=min_steps_per_wvl, wavelength=self.wavelength_um
         )
 
+    def default_symmetry(self) -> Tuple[int, int, int]:
+        """Symmetry planes for an Ey point dipole at the cavity centre.
+
+        - x: the cavity (holes + taper) is mirror-symmetric about x = 0, and the
+          fundamental Ey mode is even in x  -> +1.
+        - y: an Ey dipole is odd under y -> -y                              -> -1.
+        - z: the apex-down triangular cross-section is NOT symmetric about
+          z = 0, so no z-symmetry is available                             ->  0.
+
+        Using (1, -1, 0) cuts the domain 4x and selects the target mode parity,
+        which also cleans up the ringdown used for the Q extraction.
+        """
+        return (1, -1, 0)
+
     def _build(
-        self, geom, structures, source, monitors, run_time_ps, min_steps_per_wvl
+        self,
+        geom,
+        structures,
+        source,
+        monitors,
+        run_time_ps,
+        min_steps_per_wvl,
+        symmetry: Tuple[int, int, int] = (0, 0, 0),
     ):
         return td.Simulation(
             size=(geom["size_x"], geom["size_y"], geom["size_z"]),
@@ -344,35 +404,55 @@ class SiVNanobeamSimulationSetup:
             run_time=run_time_ps * 1e-12,
             boundary_spec=td.BoundarySpec.all_sides(boundary=td.PML()),
             medium=self.clad_medium,
+            symmetry=symmetry,
         )
 
     def create_q_scout_simulation(
-        self, run_time_ps=6.0, min_steps_per_wvl=14
+        self, run_time_ps=6.0, min_steps_per_wvl=14, symmetry=None
     ) -> td.Simulation:
         print("\nCreating minimal scout simulation (Q-only, triangular core)...")
+        if symmetry is None:
+            symmetry = self.default_symmetry()
         geom = self.geometry_params()
         structures = [self.create_core_structure(geom)] + self.create_hole_structures(
             geom
         )
         source, monitors = self.create_minimal_q_probe(geom)
         sim = self._build(
-            geom, structures, source, monitors, run_time_ps, min_steps_per_wvl
+            geom, structures, source, monitors, run_time_ps, min_steps_per_wvl, symmetry
         )
-        print("[OK] Scout simulation ready")
+        print(f"[OK] Scout simulation ready (symmetry={symmetry})")
         return sim
 
-    def create_simulation(self, run_time_ps=8.0, min_steps_per_wvl=14) -> td.Simulation:
+    def create_simulation(
+        self,
+        run_time_ps=8.0,
+        min_steps_per_wvl=14,
+        symmetry=None,
+        with_farfield: bool = True,
+    ) -> td.Simulation:
+        """Full lock-in simulation with the 7-monitor characterization suite.
+
+        Monitors: probe, flux, field_near, fld_3d_box, and (optionally) the
+        three far-field projection monitors (Cartesian / k-space / angular).
+        """
         print("\nCreating full simulation (triangular core)...")
+        if symmetry is None:
+            symmetry = self.default_symmetry()
         geom = self.geometry_params()
         structures = [self.create_core_structure(geom)] + self.create_hole_structures(
             geom
         )
         source, monitors = self.create_sources_and_monitors(geom)
         monitors = monitors + [self.create_mode_volume_monitor(geom)]
+        if with_farfield:
+            monitors = monitors + self.create_farfield_monitors(geom)
         sim = self._build(
-            geom, structures, source, monitors, run_time_ps, min_steps_per_wvl
+            geom, structures, source, monitors, run_time_ps, min_steps_per_wvl, symmetry
         )
-        print("[OK] Full simulation ready")
+        print(
+            f"[OK] Full simulation ready (symmetry={symmetry}, monitors={len(monitors)})"
+        )
         return sim
 
 

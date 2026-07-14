@@ -2,23 +2,17 @@
 
 ## Cursor Cloud specific instructions
 
-This repo is a small [`uv`](https://docs.astral.sh/uv/)-managed Python 3.12 project. It
-designs a SiV diamond triangular-cross-section nanobeam photonic-crystal cavity, builds a
-Tidy3D FDTD simulation of it, and (via the cloud solver) analyzes Q-factor and mode volume.
-Dependencies are `tidy3d`, `gdstk`, `pipx` (+ their scientific stack) declared in
-`pyproject.toml` and pinned in `uv.lock`.
+This repo is a small [`uv`](https://docs.astral.sh/uv/)-managed Python 3.12 project for
+Tidy3D photonic-crystal (nanobeam) cavity FDTD simulations. Dependencies are `tidy3d` +
+`gdstk` (+ scientific stack) declared in `pyproject.toml` and pinned in `uv.lock`.
 
-### Layout
-- `siv_cavity/` is the core package: `geometry.py` (cavity design + GDS export), `materials.py`,
- `simulation.py` (`SiVNanobeamSimulationSetup` builds/validates the `td.Simulation`), and
- `config.py` (defaults, runtime dirs, `.env` loading).
-- `run_scout.py` is the primary entry point: it designs the cavity, exports GDS into
- `tidy3d_SiV_diamond_photonic_cavity_runtime/gds/`, builds + validates the scout FDTD
- simulation, plots it, then submits it to the Tidy3D cloud. `SiV_cavity_base.py` is a thin
- backward-compatible wrapper around `run_scout.main`.
-- `SiV_cavity_3d_preview.py` is a standalone offline `td.Scene.plot_3d()` preview.
-- Notebooks live in the repo root (`SiV_cavity_base_notebook.ipynb`) and `examples/`
- (`NanobeamCavity.ipynb`, `DiamondPhotonicCrystalCavity.ipynb`).
+Main pieces:
+- `examples/*.ipynb`, `NanobeamCavity.ipynb`, `SiV_cavity_base_notebook.ipynb` — notebooks.
+- `siv_cavity/` package — the reusable SiV-cavity code: `geometry.py` (nanobeam + GDS),
+  `materials.py` (diamond/air media), `simulation.py` (`SiVNanobeamSimulationSetup`, triangular
+  core, monitors, symmetry), `analysis.py` (`extract_resonance` via `ResonanceFinder`), `config.py`.
+- `run_scout.py` — single broadband scout run. `run_lockin.py` — two-stage scout→resonance→
+  narrowband lock-in Q workflow (7-monitor suite), mirroring the diamond example (sections 5-6).
 
 ### Environment
 - `uv` is installed at `~/.local/bin/uv` and is on the login-shell `PATH` (added to `~/.bashrc`).
@@ -35,17 +29,21 @@ Dependencies are `tidy3d`, `gdstk`, `pipx` (+ their scientific stack) declared i
 
 ### Tidy3D cloud (important gotcha)
 - Tidy3D is a **cloud** FDTD solver. Any `tidy3d.web` call (`web.test`, `web.upload`,
- `web.run`) requires authentication and consumes paid FlexCredits. The `run_scout.py` cloud
- step and any notebook cells that call `web.*` (and everything downstream that uses
- `sim_data`) will fail without credentials.
-- Provide credentials via the `TIDY3D_API_KEY` environment variable (add it as a secret) or by
- writing `~/.tidy3d/config` with `apikey = '...'` (e.g. `uv run tidy3d configure`).
- Note: `run_scout.py` reads a **project-local `.env`** via `siv_cavity.config.load_project_env`
- before importing tidy3d and maps `TIDY3D_API_KEY` → `TIDY3D_WEB__APIKEY`, so an `.env` at the
- repo root also works.
-- Everything else — geometry assembly, GDS export, building/validating the `td.Simulation`,
- and plotting with `sim.plot(...)` — runs fully offline and is the best way to sanity-check
- changes without spending credits.
+  `web.run`) requires authentication and consumes paid FlexCredits. The notebook cells that
+  call `web.*` (and everything downstream that uses `sim_data`) will fail without credentials.
+- The `siv_cavity` scripts read the key from a **project-local `.env`** (git-ignored) via
+  `siv_cavity.config.load_project_env()`, which must run *before* `import tidy3d`; it maps the
+  legacy `TIDY3D_API_KEY` to `TIDY3D_WEB__APIKEY` (what Tidy3D 2.11+ reads). So put
+  `TIDY3D_API_KEY=...` in `/workspace/.env` (or add it as a secret). `~/.tidy3d/config` also works.
+- Everything else — geometry assembly, building/validating the `td.Simulation`, and plotting
+  with `sim.plot(...)` — runs fully offline and is the best way to sanity-check without credits.
+  `td.Simulation(...)` validation (monitor placement, symmetry, etc.) runs at construction, so
+  build sims locally before spending credits on `web.run`.
+- FDTD notes: use `symmetry=(1,-1,0)` for the centred Ey dipole with the apex-down triangular
+  core (x even, y odd, z broken by the triangle) — 4x cheaper + selects the mode. High-Q cavities
+  never fully decay in a short `run_time` (expect the "field decay" shutoff warning); extract Q
+  from the ringdown with `ResonanceFinder` instead of requiring full decay. Large `.hdf5` results
+  under `.../data/results/` are git-ignored.
 
 ### Lint / tests
 - There is no lint config and no automated test suite in this repo.

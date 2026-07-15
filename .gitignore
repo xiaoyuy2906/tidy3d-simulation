@@ -15,3 +15,4 @@ wheels/
 
 # Large Tidy3D result caches
 tidy3d_SiV_diamond_photonic_cavity_runtime/data/results/*.hdf5
+*.hdf5

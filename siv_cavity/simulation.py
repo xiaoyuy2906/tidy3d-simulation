@@ -282,6 +282,16 @@ class SiVNanobeamSimulationSetup:
             polarization="Ey",
         )
 
+    def _apodization(self) -> td.ApodizationSpec:
+        """Window out the source transient from frequency-domain DFTs.
+
+        The Gaussian pulse has effectively died out after ~10/fwidth, so the
+        running DFT of the frequency monitors starts there and only sees the
+        clean cavity ringdown (for the 2% lock-in source: ~1.2 ps of the
+        30 ps run)."""
+        fwidth = self.f0_center * self.source_bandwidth_rel
+        return td.ApodizationSpec(start=10.0 / fwidth, width=1.0 / fwidth)
+
     def create_minimal_q_probe(
         self, geom: Dict
     ) -> Tuple[td.PointDipole, List[td.Monitor]]:
@@ -307,12 +317,14 @@ class SiVNanobeamSimulationSetup:
             size=(geom["size_x"] * 0.8, geom["size_y"] * 0.8, 0),
             freqs=[self.f0_center],
             name="flux",
+            apodization=self._apodization(),
         )
         field_near = td.FieldMonitor(
             center=(geom["cx"], geom["cy"], 0.0),
             size=(geom["size_x"] * 0.8, geom["size_y"] * 0.8, 0),
             freqs=[self.f0_center],
             name="field_near",
+            apodization=self._apodization(),
         )
         return self._source(geom), [probe, flux, field_near]
 
@@ -324,6 +336,7 @@ class SiVNanobeamSimulationSetup:
             fields=["Ex", "Ey", "Ez"],
             freqs=[self.f0_center],
             interval_space=(1, 1, 1),
+            apodization=self._apodization(),
         )
 
     def create_farfield_monitors(self, geom: Dict) -> List[td.Monitor]:
@@ -344,6 +357,7 @@ class SiVNanobeamSimulationSetup:
             y=list(np.linspace(-4, 4, 50)),
             proj_axis=2,
             proj_distance=1e6,
+            apodization=self._apodization(),
         )
         kspace = td.FieldProjectionKSpaceMonitor(
             center=(geom["cx"], geom["cy"], z_mon),
@@ -353,6 +367,7 @@ class SiVNanobeamSimulationSetup:
             ux=list(np.linspace(-0.95, 0.95, 40)),
             uy=list(np.linspace(-0.95, 0.95, 40)),
             proj_axis=2,
+            apodization=self._apodization(),
         )
         angles = td.FieldProjectionAngleMonitor(
             center=(geom["cx"], geom["cy"], z_mon),
@@ -362,6 +377,7 @@ class SiVNanobeamSimulationSetup:
             theta=list(np.linspace(0.0, np.pi / 2, 100)),
             phi=list(np.linspace(0.0, 2 * np.pi, 200)),
             proj_distance=1e6,
+            apodization=self._apodization(),
         )
         return [cartesian, kspace, angles]
 

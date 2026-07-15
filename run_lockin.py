@@ -33,6 +33,7 @@ from siv_cavity.geometry import (
 from siv_cavity.materials import air_medium, diamond_medium, n_diamond
 from siv_cavity.simulation import SiVNanobeamSimulationSetup, print_fdtd_summary
 from siv_cavity.analysis import extract_resonance, print_resonance
+from siv_cavity.postprocess import run_full_analysis
 
 # ── Optimized FDTD settings ───────────────────────────────────────────────────
 SCOUT_RUN_TIME_PS = 10.0      # broadband resonance search
@@ -131,11 +132,26 @@ def main():
     )
     print_resonance(res_lockin, "Stage 2 (lock-in) resonance")
 
+    # 5. Post-processing: ringdown figures, near-field map, V_eff, Purcell
+    results = run_full_analysis(
+        data_scout=data_scout,
+        data_lockin=data_lockin,
+        res_scout=res_scout,
+        res_lockin=res_lockin,
+        cavity_bbox=bbox,
+        holes_gds=holes_gds,
+        thickness_um=cavity.thickness,
+        fig_dir=RESULTS_DIR,
+    )
+
     print("\n" + "=" * 62)
     print("  SiV DIAMOND NANOCAVITY - Q-FACTOR SUMMARY")
     print("=" * 62)
     print(f"  Scout   : lambda = {res_scout['wavelength_nm']:.3f} nm, Q = {res_scout['Q']:.3e}")
     print(f"  Lock-in : lambda = {res_lockin['wavelength_nm']:.3f} nm, Q = {res_lockin['Q']:.3e}")
+    print(f"  A_eff   = {results['confinement']['A_eff_um2']:.4f} um^2")
+    print(f"  V_eff   = {results['V_eff_um3']:.4f} um^3 = {results['V_norm']:.3f} x (lambda/2n)^3")
+    print(f"  F_P     = {results['F_P']:.1f}")
     print("=" * 62)
 
 

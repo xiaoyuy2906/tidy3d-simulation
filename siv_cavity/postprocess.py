@@ -348,9 +348,11 @@ def run_full_analysis(
 
     # -- Ringdown visualisation
     print("\n-- Ringdown visualisation ------------------------------------")
+    wl_scout_nm = res_scout["wavelength_um"] * 1e3
     plot_ringdown(
         data_scout,
         res_scout,
+        wavelength_window_nm=(wl_scout_nm - 60.0, wl_scout_nm + 60.0),
         title_prefix="Scout: ",
         save_path=fig_dir / "ringdown_scout.png",
     )

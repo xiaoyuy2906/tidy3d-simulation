@@ -258,9 +258,12 @@ def compute_confinement(
         results[f"w_{axis_label}_um"] = w
         results[f"fwhm_{axis_label}_nm"] = 2 * np.sqrt(2 * np.log(2)) * w * 1e3
 
-    dx = abs(np.diff(x[:2])[0])
-    dy = abs(np.diff(y[:2])[0])
-    A_eff = float(np.sum(I) ** 2 / np.sum(I**2) * dx * dy)
+    # Coordinate-aware integration: the monitor grid is non-uniform when a
+    # mesh override refines the cavity core, so integrate on the actual axes.
+    def _trapz2d(F: np.ndarray) -> float:
+        return float(np.trapezoid(np.trapezoid(F, x, axis=1), y, axis=0))
+
+    A_eff = _trapz2d(I) ** 2 / _trapz2d(I**2)
     results["A_eff_um2"] = A_eff
     results["A_eff_lambda2"] = A_eff / wavelength_um**2
     return results
@@ -275,44 +278,41 @@ def compute_mode_volume(
     wavelength_um: float = 0.737,
     thickness_um: float = 0.220,
 ) -> Tuple[float, float]:
-    """Compute the effective mode volume V_eff and its normalisation (lambda/2n)^3.
+    """Compute the effective mode volume V_eff and its normalisation (lambda/n)^3.
 
     V_eff = integral(eps |E|^2 dV) / max(eps |E|^2), with the permittivity
-    estimated analytically: n_diamond^2 inside the slab (|z| < thickness/2)
-    and 1 elsewhere (holes and the triangular sidewalls are not resolved,
-    matching the notebook's approximation).
+    sampled from the simulation itself (``Simulation.epsilon`` interpolated
+    onto the monitor grid) so that holes, the triangular sidewalls and the
+    air cladding are resolved exactly — mirrors the mode-volume recipe of
+    ``examples/NanobeamCavity.ipynb``.
 
-    Returns (V_eff [um^3], V_eff / (lambda/2n)^3).
+    ``thickness_um`` is kept for signature compatibility and no longer used.
+
+    Returns (V_eff [um^3], V_eff / (lambda/n)^3).
     """
     mon = data[monitor_name]
-    Ex = mon.Ex.isel(f=0).values.squeeze()
-    Ey = mon.Ey.isel(f=0).values.squeeze()
-    Ez = (
-        mon.Ez.isel(f=0).values.squeeze()
-        if "Ez" in mon.field_components
-        else np.zeros_like(Ex)
+    Ex = mon.Ex.isel(f=0)
+    Ey = mon.Ey.isel(f=0)
+    Ez = mon.Ez.isel(f=0) if "Ez" in mon.field_components else 0.0
+    intensity = np.abs(Ex) ** 2 + np.abs(Ey) ** 2 + np.abs(Ez) ** 2
+
+    # Exact permittivity of the simulated structure on the monitor grid.
+    freq = float(mon.Ex.coords["f"].values[0])
+    eps = np.abs(
+        data.simulation.epsilon(
+            box=td.Box(center=(0, 0, 0), size=(td.inf, td.inf, td.inf)), freq=freq
+        )
+    )
+    eps = eps.interp(
+        x=intensity.coords["x"], y=intensity.coords["y"], z=intensity.coords["z"]
     )
 
-    x = _coords_to_um(mon.Ex.coords["x"].values)
-    y = _coords_to_um(mon.Ex.coords["y"].values)
-    z = _coords_to_um(mon.Ex.coords["z"].values)
+    # Trapezoidal integration handles the non-uniform auto grid correctly.
+    eps_I = eps * intensity
+    V_eff = float(eps_I.integrate(coord=("x", "y", "z")) / eps_I.max())
 
-    # Ensure field shape (nz, ny, nx)
-    I = np.abs(Ex) ** 2 + np.abs(Ey) ** 2 + np.abs(Ez) ** 2
-    if I.shape == (len(x), len(y), len(z)):
-        I = np.transpose(I, (2, 1, 0))
-
-    # Analytic permittivity map
     n = float(n_diamond(wavelength_um))
-    Z3d = z[:, None, None] * np.ones_like(I)
-    eps = np.where(np.abs(Z3d) < thickness_um / 2, n**2, 1.0)
-
-    eps_I = eps * I
-    dV = abs(np.diff(x[:2])[0]) * abs(np.diff(y[:2])[0]) * abs(np.diff(z[:2])[0])
-    V_eff = float(np.sum(eps_I) * dV / np.max(eps_I))
-
-    lambda_n = wavelength_um / n
-    V_norm = V_eff / (lambda_n / 2) ** 3
+    V_norm = V_eff / (wavelength_um / n) ** 3
     return V_eff, V_norm
 
 
@@ -395,7 +395,7 @@ def run_full_analysis(
     Q_val = res_lockin["Q"]
     F_P = compute_purcell(Q_val, V_eff, wavelength_um)
     print(f"  Effective mode volume  V_eff  = {V_eff:.4f} um^3")
-    print(f"                                = {V_norm:.3f} x (lambda/2n)^3")
+    print(f"                                = {V_norm:.3f} x (lambda/n)^3")
     print(f"  Quality factor         Q      = {Q_val:.0f}")
     print(f"  Purcell factor         F_P    = {F_P:.1f}")
 

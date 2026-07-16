@@ -34,6 +34,8 @@ class SiVNanobeamSimulationSetup:
         pad_z_um: float = 1.2,
         hole_layer: Tuple[int, int] = (0, 0),
         chunk_max: int = 100,
+        core_mesh_dl_um: float | None = None,
+        core_mesh_size_x_um: float = 4.0,
         *,
         diamond_medium: td.Medium,
         clad_medium: td.Medium,
@@ -59,6 +61,8 @@ class SiVNanobeamSimulationSetup:
         self.pad_z_um = float(pad_z_um)
         self.hole_layer = tuple(hole_layer)
         self.chunk_max = int(chunk_max)
+        self.core_mesh_dl_um = None if core_mesh_dl_um is None else float(core_mesh_dl_um)
+        self.core_mesh_size_x_um = float(core_mesh_size_x_um)
         self.diamond_medium = diamond_medium
         self.clad_medium = clad_medium
         self.f0_center = c0_m_per_s / (self.wavelength_um * 1e-6)
@@ -381,9 +385,32 @@ class SiVNanobeamSimulationSetup:
         )
         return [cartesian, kspace, angles]
 
-    def _grid_spec(self, min_steps_per_wvl: int) -> td.GridSpec:
+    def _grid_spec(self, min_steps_per_wvl: int, geom: Dict | None = None) -> td.GridSpec:
+        """Auto grid, optionally refined to ``core_mesh_dl_um`` in the cavity core.
+
+        Mirrors ``examples/NanobeamCavity.ipynb``: a MeshOverrideStructure box
+        (core_mesh_size_x_um x beam width x beam thickness) centred on the
+        cavity concentrates resolution where the mode lives. Note the smallest
+        cell also sets the FDTD time step, so a finer core grid increases the
+        step count proportionally."""
+        override_structures = []
+        if self.core_mesh_dl_um is not None and geom is not None:
+            dl = self.core_mesh_dl_um
+            core_box = td.Box(
+                center=(geom["cx"], geom["cy"], 0.0),
+                size=(
+                    min(self.core_mesh_size_x_um, geom["size_x"]),
+                    self.wg_width_um,
+                    self.thickness_um,
+                ),
+            )
+            override_structures = [
+                td.MeshOverrideStructure(geometry=core_box, dl=(dl, dl, dl))
+            ]
         return td.GridSpec.auto(
-            min_steps_per_wvl=min_steps_per_wvl, wavelength=self.wavelength_um
+            min_steps_per_wvl=min_steps_per_wvl,
+            wavelength=self.wavelength_um,
+            override_structures=override_structures,
         )
 
     def default_symmetry(self) -> Tuple[int, int, int]:
@@ -413,7 +440,7 @@ class SiVNanobeamSimulationSetup:
         return td.Simulation(
             size=(geom["size_x"], geom["size_y"], geom["size_z"]),
             center=(geom["cx"], geom["cy"], geom["cz"]),
-            grid_spec=self._grid_spec(min_steps_per_wvl),
+            grid_spec=self._grid_spec(min_steps_per_wvl, geom),
             structures=structures,
             sources=[source],
             monitors=monitors,

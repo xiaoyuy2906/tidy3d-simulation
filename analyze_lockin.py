@@ -105,7 +105,7 @@ def main():
     print(f"  Scout   : lambda = {res_scout['wavelength_nm']:.3f} nm, Q = {res_scout['Q']:.3e}")
     print(f"  Lock-in : lambda = {res_lockin['wavelength_nm']:.3f} nm, Q = {res_lockin['Q']:.3e}")
     print(f"  A_eff   = {results['confinement']['A_eff_um2']:.4f} um^2")
-    print(f"  V_eff   = {results['V_eff_um3']:.4f} um^3 = {results['V_norm']:.3f} x (lambda/2n)^3")
+    print(f"  V_eff   = {results['V_eff_um3']:.4f} um^3 = {results['V_norm']:.3f} x (lambda/n)^3")
     print(f"  F_P     = {results['F_P']:.1f}")
     print("=" * 62)
 

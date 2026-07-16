@@ -42,9 +42,13 @@ SCOUT_BANDWIDTH_REL = 0.12
 LOCKIN_RUN_TIME_PS = 30.0     # long ringdown for accurate high-Q fit
 LOCKIN_STEPS_PER_WVL = 20     # finer grid -> higher numerical-Q ceiling
 LOCKIN_BANDWIDTH_REL = 0.02   # narrowband at resonance
+LOCKIN_CORE_MESH_DL_UM = 0.010  # 10 nm mesh override over the cavity core
 
 
-def build_setup(cavity, cavity_gds, holes_gds, bbox, specs, wavelength_um, bandwidth_rel):
+def build_setup(
+    cavity, cavity_gds, holes_gds, bbox, specs, wavelength_um, bandwidth_rel,
+    core_mesh_dl_um=None,
+):
     return SiVNanobeamSimulationSetup(
         cavity_gds=cavity_gds,
         holes_gds=holes_gds,
@@ -59,6 +63,7 @@ def build_setup(cavity, cavity_gds, holes_gds, bbox, specs, wavelength_um, bandw
         ellipse_tolerance_um=specs["ELLIPSE_TOLERANCE_UM"],
         source_bandwidth_rel=bandwidth_rel,
         end_wg_length_um=cavity.end_wg_length,
+        core_mesh_dl_um=core_mesh_dl_um,
         diamond_medium=diamond_medium,
         clad_medium=air_medium,
     )
@@ -112,7 +117,8 @@ def main():
 
     # 3. Stage 2: narrowband lock-in at the detected resonance, full monitor suite
     lockin_setup = build_setup(
-        cavity, cavity_gds, holes_gds, bbox, specs, wavelength_lockin, LOCKIN_BANDWIDTH_REL
+        cavity, cavity_gds, holes_gds, bbox, specs, wavelength_lockin, LOCKIN_BANDWIDTH_REL,
+        core_mesh_dl_um=LOCKIN_CORE_MESH_DL_UM,
     )
     sim_lockin = lockin_setup.create_simulation(
         run_time_ps=LOCKIN_RUN_TIME_PS,
@@ -150,7 +156,7 @@ def main():
     print(f"  Scout   : lambda = {res_scout['wavelength_nm']:.3f} nm, Q = {res_scout['Q']:.3e}")
     print(f"  Lock-in : lambda = {res_lockin['wavelength_nm']:.3f} nm, Q = {res_lockin['Q']:.3e}")
     print(f"  A_eff   = {results['confinement']['A_eff_um2']:.4f} um^2")
-    print(f"  V_eff   = {results['V_eff_um3']:.4f} um^3 = {results['V_norm']:.3f} x (lambda/2n)^3")
+    print(f"  V_eff   = {results['V_eff_um3']:.4f} um^3 = {results['V_norm']:.3f} x (lambda/n)^3")
     print(f"  F_P     = {results['F_P']:.1f}")
     print("=" * 62)
 

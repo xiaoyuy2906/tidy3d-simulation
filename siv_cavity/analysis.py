@@ -59,6 +59,18 @@ def extract_resonance(
     t = getattr(mon, field).coords["t"].values
     dt = float(t[1] - t[0])
 
+    # Trim the source transient before fitting: keep t >= 2 x source decay
+    # (offset + pulse time, cf. examples/NanobeamCavity.ipynb) so the
+    # ResonanceFinder only sees the clean exponential ringdown.
+    if data.simulation.sources:
+        src_time = data.simulation.sources[0].source_time
+        t_off = src_time.offset / (2 * np.pi * src_time.fwidth)
+        t_start = 2.0 * (t_off + 0.44 / src_time.fwidth)
+        keep = t >= t_start
+        if 16 < np.count_nonzero(keep) < len(t):
+            signal = signal[keep]
+            t = t[keep]
+
     f0 = C0_M_PER_S / (wavelength_centre_um * 1e-6)
     fwidth = f0 * bandwidth_rel
     freq_window = (f0 - fwidth, f0 + fwidth)
@@ -104,5 +116,5 @@ def print_resonance(res: Dict, label: str = "Q-factor extraction") -> None:
     print(f"\n-- {label} --")
     print(f"  Resonance wavelength : {res['wavelength_nm']:.3f} nm")
     print(f"  Quality factor  Q    : {res['Q']:.3e}")
-    print(f"  Energy decay time    : {res['decay_time_ps']:.2f} ps")
+    print(f"  Amplitude decay time : {res['decay_time_ps']:.2f} ps (energy: {res['decay_time_ps'] / 2:.2f} ps)")
     print(f"  Fit error            : {res['error']:.2e}")

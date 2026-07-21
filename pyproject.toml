@@ -7,5 +7,6 @@ requires-python = ">=3.12"
 dependencies = [
     "gdstk>=1.0.0",
     "pipx>=1.15.0",
+    "scipy-stubs~=1.18.0",
     "tidy3d>=2.11.2",
 ]

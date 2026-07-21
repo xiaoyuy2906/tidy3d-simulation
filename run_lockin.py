@@ -36,13 +36,16 @@ from siv_cavity.analysis import extract_resonance, print_resonance
 from siv_cavity.postprocess import run_full_analysis
 
 # ── Optimized FDTD settings ───────────────────────────────────────────────────
-SCOUT_RUN_TIME_PS = 10.0      # broadband resonance search
+SCOUT_RUN_TIME_PS = 8.0      # broadband resonance search
 SCOUT_STEPS_PER_WVL = 18
 SCOUT_BANDWIDTH_REL = 0.12
-LOCKIN_RUN_TIME_PS = 30.0     # long ringdown for accurate high-Q fit
-LOCKIN_STEPS_PER_WVL = 20     # finer grid -> higher numerical-Q ceiling
+LOCKIN_RUN_TIME_PS = 15.0     # long ringdown for accurate high-Q fit
+LOCKIN_STEPS_PER_WVL = 25     # finer grid -> higher numerical-Q ceiling
 LOCKIN_BANDWIDTH_REL = 0.02   # narrowband at resonance
 LOCKIN_CORE_MESH_DL_UM = 0.010  # 10 nm mesh override over the cavity core
+
+# If scout_opt.hdf5 already exists, skip the scout cloud run (saves credits).
+REUSE_SCOUT_HDF5 = True
 
 
 def build_setup(
@@ -69,8 +72,25 @@ def build_setup(
     )
 
 
+def run_or_load_scout(scout_setup):
+    """Reuse ``scout_opt.hdf5`` when present; otherwise run Stage 1 on the cloud."""
+    scout_path = RESULTS_DIR / "scout_opt.hdf5"
+    if REUSE_SCOUT_HDF5 and scout_path.exists():
+        print(f"Reusing scout data: {scout_path}")
+        return td.SimulationData.from_file(str(scout_path))
+
+    sim_scout = scout_setup.create_q_scout_simulation(
+        run_time_ps=SCOUT_RUN_TIME_PS, min_steps_per_wvl=SCOUT_STEPS_PER_WVL
+    )
+    print_fdtd_summary(sim_scout, scout_setup, "Stage 1 Scout", SCOUT_STEPS_PER_WVL)
+    return web.run(sim_scout, task_name="SiV_scout_opt", path=str(scout_path))
+
+
 def main():
     ensure_runtime_dirs()
+
+    balance = float(web.account().credit or 0.0)
+    print(f"FlexCredit balance: {balance:.3f}")
 
     # 1. Design cavity + GDS
     cavity = build_nanobeam_cavity(
@@ -96,16 +116,11 @@ def main():
     )
     print(f"n(diamond) @ {WAVELENGTH_SCOUT_UM * 1e3:.0f} nm = {float(n_diamond(WAVELENGTH_SCOUT_UM)):.4f}")
 
-    # 2. Stage 1: optimized scout (symmetry + longer run_time)
+    # 2. Stage 1: scout (reuse hdf5 when available)
     scout_setup = build_setup(
         cavity, cavity_gds, holes_gds, bbox, specs, WAVELENGTH_SCOUT_UM, SCOUT_BANDWIDTH_REL
     )
-    sim_scout = scout_setup.create_q_scout_simulation(
-        run_time_ps=SCOUT_RUN_TIME_PS, min_steps_per_wvl=SCOUT_STEPS_PER_WVL
-    )
-    print_fdtd_summary(sim_scout, scout_setup, "Stage 1 Scout", SCOUT_STEPS_PER_WVL)
-    scout_path = RESULTS_DIR / "scout_opt.hdf5"
-    data_scout = web.run(sim_scout, task_name="SiV_scout_opt", path=str(scout_path))
+    data_scout = run_or_load_scout(scout_setup)
 
     res_scout = extract_resonance(
         data_scout,
@@ -159,6 +174,9 @@ def main():
     print(f"  V_eff   = {results['V_eff_um3']:.4f} um^3 = {results['V_norm']:.3f} x (lambda/n)^3")
     print(f"  F_P     = {results['F_P']:.1f}")
     print("=" * 62)
+
+    balance_after = float(web.account().credit or 0.0)
+    print(f"FlexCredit balance after: {balance_after:.3f} (spent ≈ {balance - balance_after:.3f})")
 
 
 if __name__ == "__main__":

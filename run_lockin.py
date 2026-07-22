@@ -35,22 +35,51 @@ from siv_cavity.simulation import SiVNanobeamSimulationSetup, print_fdtd_summary
 from siv_cavity.analysis import extract_resonance, print_resonance
 from siv_cavity.postprocess import run_full_analysis
 
-# ── Optimized FDTD settings ───────────────────────────────────────────────────
-SCOUT_RUN_TIME_PS = 8.0      # broadband resonance search
-SCOUT_STEPS_PER_WVL = 18
+# ── Shared FDTD settings (baseline = carbon sweep; keep identical for comparison)
+SCOUT_RUN_TIME_PS = 8.0
+SCOUT_STEPS_PER_WVL = 12
 SCOUT_BANDWIDTH_REL = 0.12
-LOCKIN_RUN_TIME_PS = 15.0     # long ringdown for accurate high-Q fit
-LOCKIN_STEPS_PER_WVL = 25     # finer grid -> higher numerical-Q ceiling
-LOCKIN_BANDWIDTH_REL = 0.02   # narrowband at resonance
-LOCKIN_CORE_MESH_DL_UM = 0.010  # 10 nm mesh override over the cavity core
+LOCKIN_RUN_TIME_PS = 15.0
+LOCKIN_STEPS_PER_WVL = 25
+LOCKIN_BANDWIDTH_REL = 0.02
 
-# If scout_opt.hdf5 already exists, skip the scout cloud run (saves credits).
-REUSE_SCOUT_HDF5 = True
+# Single fine-mesh override — lock-in only (scout uses AutoGrid alone).
+FINE_MESH_DL_UM = 0.0075  # 7.5 nm
+FINE_MESH_SIZE_X_UM = 3.0
+FINE_MESH_SIZE_Y_UM = 0.75
+FINE_MESH_SIZE_Z_UM = 0.55
+FINE_MESH_KW = dict(
+    finemesh_dl_um=FINE_MESH_DL_UM,
+    finemesh_size_x_um=FINE_MESH_SIZE_X_UM,
+    finemesh_size_y_um=FINE_MESH_SIZE_Y_UM,
+    finemesh_size_z_um=FINE_MESH_SIZE_Z_UM,
+)
+
+# Geometry matching the carbon sweep.
+END_WG_LENGTH_UM = 5.0
+
+# Do not reuse diverged / stale baseline hdf5 from Sellmeier runs.
+REUSE_SCOUT_HDF5 = False
+SCOUT_HDF5 = RESULTS_DIR / "scout_baseline.hdf5"
+LOCKIN_HDF5 = RESULTS_DIR / "lockin_baseline.hdf5"
 
 
 def build_setup(
-    cavity, cavity_gds, holes_gds, bbox, specs, wavelength_um, bandwidth_rel,
-    core_mesh_dl_um=None,
+    cavity,
+    cavity_gds,
+    holes_gds,
+    bbox,
+    specs,
+    wavelength_um,
+    bandwidth_rel,
+    finemesh_dl_um=None,
+    finemesh_size_x_um=None,
+    finemesh_size_y_um=None,
+    finemesh_size_z_um=None,
+    include_carbon=False,
+    carbon_thickness_um=0.0,
+    carbon_medium=None,
+    fixed_grid_spec=None,
 ):
     return SiVNanobeamSimulationSetup(
         cavity_gds=cavity_gds,
@@ -66,24 +95,30 @@ def build_setup(
         ellipse_tolerance_um=specs["ELLIPSE_TOLERANCE_UM"],
         source_bandwidth_rel=bandwidth_rel,
         end_wg_length_um=cavity.end_wg_length,
-        core_mesh_dl_um=core_mesh_dl_um,
         diamond_medium=diamond_medium,
         clad_medium=air_medium,
+        include_carbon=include_carbon,
+        carbon_thickness_um=carbon_thickness_um,
+        carbon_medium=carbon_medium,
+        finemesh_dl_um=finemesh_dl_um,
+        finemesh_size_x_um=finemesh_size_x_um,
+        finemesh_size_y_um=finemesh_size_y_um,
+        finemesh_size_z_um=finemesh_size_z_um,
+        fixed_grid_spec=fixed_grid_spec,
     )
 
 
 def run_or_load_scout(scout_setup):
-    """Reuse ``scout_opt.hdf5`` when present; otherwise run Stage 1 on the cloud."""
-    scout_path = RESULTS_DIR / "scout_opt.hdf5"
-    if REUSE_SCOUT_HDF5 and scout_path.exists():
-        print(f"Reusing scout data: {scout_path}")
-        return td.SimulationData.from_file(str(scout_path))
+    """Reuse baseline scout hdf5 when present; otherwise run Stage 1 on the cloud."""
+    if REUSE_SCOUT_HDF5 and SCOUT_HDF5.exists():
+        print(f"Reusing scout data: {SCOUT_HDF5}")
+        return td.SimulationData.from_file(str(SCOUT_HDF5))
 
     sim_scout = scout_setup.create_q_scout_simulation(
         run_time_ps=SCOUT_RUN_TIME_PS, min_steps_per_wvl=SCOUT_STEPS_PER_WVL
     )
     print_fdtd_summary(sim_scout, scout_setup, "Stage 1 Scout", SCOUT_STEPS_PER_WVL)
-    return web.run(sim_scout, task_name="SiV_scout_opt", path=str(scout_path))
+    return web.run(sim_scout, task_name="SiV_scout_baseline", path=str(SCOUT_HDF5))
 
 
 def main():
@@ -91,8 +126,15 @@ def main():
 
     balance = float(web.account().credit or 0.0)
     print(f"FlexCredit balance: {balance:.3f}")
+    print(
+        f"Baseline settings: steps/λ scout={SCOUT_STEPS_PER_WVL}, "
+        f"lockin={LOCKIN_STEPS_PER_WVL}; fine mesh (lock-in only) "
+        f"dl={FINE_MESH_DL_UM*1e3:.1f} nm, "
+        f"size=({FINE_MESH_SIZE_X_UM}, {FINE_MESH_SIZE_Y_UM}, {FINE_MESH_SIZE_Z_UM}) µm; "
+        f"end_wg={END_WG_LENGTH_UM:g} µm"
+    )
 
-    # 1. Design cavity + GDS
+    # 1. Design cavity + GDS (same geometry as carbon sweep)
     cavity = build_nanobeam_cavity(
         period=PERIOD_UM,
         hole_radius=0.075,
@@ -100,7 +142,7 @@ def main():
         ang=SIDEWALL_ANGLE_DEG,
         n_hole=20,
         n_taper=8,
-        end_wg_length=5.0,
+        end_wg_length=END_WG_LENGTH_UM,
     )
     specs = cavity.get_hole_specs()
     bbox = cavity_bbox_um(cavity)
@@ -114,11 +156,19 @@ def main():
         ellipse_tolerance_um=specs["ELLIPSE_TOLERANCE_UM"],
         force=True,
     )
-    print(f"n(diamond) @ {WAVELENGTH_SCOUT_UM * 1e3:.0f} nm = {float(n_diamond(WAVELENGTH_SCOUT_UM)):.4f}")
+    print(
+        f"n(diamond) @ {WAVELENGTH_SCOUT_UM * 1e3:.0f} nm = {float(n_diamond(WAVELENGTH_SCOUT_UM)):.4f}"
+    )
 
-    # 2. Stage 1: scout (reuse hdf5 when available)
+    # 2. Stage 1: scout (AutoGrid only — no MeshOverride)
     scout_setup = build_setup(
-        cavity, cavity_gds, holes_gds, bbox, specs, WAVELENGTH_SCOUT_UM, SCOUT_BANDWIDTH_REL
+        cavity,
+        cavity_gds,
+        holes_gds,
+        bbox,
+        specs,
+        WAVELENGTH_SCOUT_UM,
+        SCOUT_BANDWIDTH_REL,
     )
     data_scout = run_or_load_scout(scout_setup)
 
@@ -132,17 +182,26 @@ def main():
 
     # 3. Stage 2: narrowband lock-in at the detected resonance, full monitor suite
     lockin_setup = build_setup(
-        cavity, cavity_gds, holes_gds, bbox, specs, wavelength_lockin, LOCKIN_BANDWIDTH_REL,
-        core_mesh_dl_um=LOCKIN_CORE_MESH_DL_UM,
+        cavity,
+        cavity_gds,
+        holes_gds,
+        bbox,
+        specs,
+        wavelength_lockin,
+        LOCKIN_BANDWIDTH_REL,
+        **FINE_MESH_KW,
     )
     sim_lockin = lockin_setup.create_simulation(
         run_time_ps=LOCKIN_RUN_TIME_PS,
         min_steps_per_wvl=LOCKIN_STEPS_PER_WVL,
         with_farfield=True,
     )
-    print_fdtd_summary(sim_lockin, lockin_setup, "Stage 2 Lock-in", LOCKIN_STEPS_PER_WVL)
-    lockin_path = RESULTS_DIR / "lockin.hdf5"
-    data_lockin = web.run(sim_lockin, task_name="SiV_lockin", path=str(lockin_path))
+    print_fdtd_summary(
+        sim_lockin, lockin_setup, "Stage 2 Lock-in", LOCKIN_STEPS_PER_WVL
+    )
+    data_lockin = web.run(
+        sim_lockin, task_name="SiV_lockin_baseline", path=str(LOCKIN_HDF5)
+    )
     print(f"  - Monitors: {list(data_lockin.monitor_data.keys())}")
 
     # 4. Stage 2 Q extraction (narrow window around the lock-in wavelength)
@@ -166,17 +225,25 @@ def main():
     )
 
     print("\n" + "=" * 62)
-    print("  SiV DIAMOND NANOCAVITY - Q-FACTOR SUMMARY")
+    print("  SiV DIAMOND NANOCAVITY - BASELINE Q-FACTOR SUMMARY")
     print("=" * 62)
-    print(f"  Scout   : lambda = {res_scout['wavelength_nm']:.3f} nm, Q = {res_scout['Q']:.3e}")
-    print(f"  Lock-in : lambda = {res_lockin['wavelength_nm']:.3f} nm, Q = {res_lockin['Q']:.3e}")
+    print(
+        f"  Scout   : lambda = {res_scout['wavelength_nm']:.3f} nm, Q = {res_scout['Q']:.3e}"
+    )
+    print(
+        f"  Lock-in : lambda = {res_lockin['wavelength_nm']:.3f} nm, Q = {res_lockin['Q']:.3e}"
+    )
     print(f"  A_eff   = {results['confinement']['A_eff_um2']:.4f} um^2")
-    print(f"  V_eff   = {results['V_eff_um3']:.4f} um^3 = {results['V_norm']:.3f} x (lambda/n)^3")
+    print(
+        f"  V_eff   = {results['V_eff_um3']:.4f} um^3 = {results['V_norm']:.3f} x (lambda/n)^3"
+    )
     print(f"  F_P     = {results['F_P']:.1f}")
     print("=" * 62)
 
     balance_after = float(web.account().credit or 0.0)
-    print(f"FlexCredit balance after: {balance_after:.3f} (spent ≈ {balance - balance_after:.3f})")
+    print(
+        f"FlexCredit balance after: {balance_after:.3f} (spent ≈ {balance - balance_after:.3f})"
+    )
 
 
 if __name__ == "__main__":

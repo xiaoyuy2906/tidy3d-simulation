@@ -27,19 +27,26 @@ class SiVNanobeamSimulationSetup:
         hole_radius_y_um: float,
         ellipse_tolerance_um: float = 0.001,
         source_bandwidth_rel: float = 0.12,
-        end_wg_length_um: float = 5.0,
+        end_wg_length_um: float = 2.0,
         pad_x_neg: float | None = None,
         pad_x_pos: float | None = None,
-        pad_y_um: float = 1.2,
-        pad_z_um: float = 1.2,
+        pad_y_um: float = 1.0,
+        pad_z_um: float = 1.0,
         hole_layer: Tuple[int, int] = (0, 0),
         chunk_max: int = 100,
-        core_mesh_dl_um: float | None = None,
-        core_mesh_size_x_um: float = 4.0,
         *,
         diamond_medium: td.Medium,
         clad_medium: td.Medium,
         c0_m_per_s: float = C0_M_PER_S,
+        include_carbon: bool = False,
+        carbon_thickness_um: float = 0.0,
+        carbon_medium: td.Medium | None = None,
+        # Single fine-mesh override (used with or without carbon).
+        finemesh_dl_um: float | None = None,
+        finemesh_size_x_um: float | None = None,  # default: min(4.0, domain size_x)
+        finemesh_size_y_um: float | None = None,  # default: wg_width
+        finemesh_size_z_um: float | None = None,  # default: thickness * 1.05
+        fixed_grid_spec: td.GridSpec | None = None,
     ):
         self.cavity_gds = str(cavity_gds)
         self.holes_gds = str(holes_gds)
@@ -61,11 +68,30 @@ class SiVNanobeamSimulationSetup:
         self.pad_z_um = float(pad_z_um)
         self.hole_layer = tuple(hole_layer)
         self.chunk_max = int(chunk_max)
-        self.core_mesh_dl_um = None if core_mesh_dl_um is None else float(core_mesh_dl_um)
-        self.core_mesh_size_x_um = float(core_mesh_size_x_um)
         self.diamond_medium = diamond_medium
         self.clad_medium = clad_medium
+        self.include_carbon = bool(include_carbon)
+        self.carbon_thickness_um = float(carbon_thickness_um)
+        self.carbon_medium = carbon_medium
+        self.finemesh_dl_um = None if finemesh_dl_um is None else float(finemesh_dl_um)
+        self.finemesh_size_x_um = (
+            None if finemesh_size_x_um is None else float(finemesh_size_x_um)
+        )
+        self.finemesh_size_y_um = (
+            None if finemesh_size_y_um is None else float(finemesh_size_y_um)
+        )
+        self.finemesh_size_z_um = (
+            None if finemesh_size_z_um is None else float(finemesh_size_z_um)
+        )
+        self.fixed_grid_spec = fixed_grid_spec
         self.f0_center = c0_m_per_s / (self.wavelength_um * 1e-6)
+        if self.include_carbon:
+            if self.carbon_medium is None:
+                raise ValueError("include_carbon=True requires carbon_medium.")
+            if self.carbon_thickness_um <= 0.0:
+                raise ValueError(
+                    "carbon_thickness_um must be > 0 when include_carbon=True."
+                )
 
     def geometry_params(self) -> Dict:
         xmin, ymin, xmax, ymax = self.cavity_bbox_um
@@ -245,9 +271,80 @@ class SiVNanobeamSimulationSetup:
         print(f"  - Beam length (x): {geom['xmax'] - geom['xmin']:.3f} µm")
         return td.Structure(geometry=core_geo, medium=self.diamond_medium)
 
+    def carbon_slab_bounds(self) -> Tuple[float, float]:
+        """z-extent of the carbon film sitting on the diamond top facet."""
+        z0 = self.thickness_um / 2.0
+        return (z0, z0 + self.carbon_thickness_um)
+
+    def carbon_box_geometry(self, geom: Dict) -> td.Box:
+        """Axis-aligned bounding box of the carbon film (mesh override helper)."""
+        z0, z1 = self.carbon_slab_bounds()
+        return td.Box(
+            center=(geom["cx"], geom["cy"], 0.5 * (z0 + z1)),
+            size=(geom["xmax"] - geom["xmin"], self.wg_width_um, z1 - z0),
+        )
+
+    def create_carbon_structure(self, geom: Dict) -> td.Structure | None:
+        """Thin rectangular carbon film from the same cavity GDS (incl. holes).
+
+        Uses ``Cavity_Ideal.gds`` (rectangle with holes already subtracted) and
+        extrudes it along z to ``carbon_thickness_um`` on top of the triangular
+        diamond core. Lateral footprint and hole pattern match the cavity.
+        """
+        if not self.include_carbon:
+            return None
+
+        cavity_lib = gdstk.read_gds(self.cavity_gds)
+        tops = cavity_lib.top_level()
+        if not tops:
+            raise RuntimeError(
+                f"No top-level cells found in cavity GDS: {self.cavity_gds}"
+            )
+
+        # GDS coordinates are written in µm (Library unit=1e-6 m).
+        gds_scale = float(cavity_lib.unit / 1e-6)
+        z0, z1 = self.carbon_slab_bounds()
+        layer, datatype = self.hole_layer
+        carbon_geo = td.Geometry.from_gds(
+            gds_cell=tops[0],
+            axis=2,
+            slab_bounds=(z0, z1),
+            gds_layer=layer,
+            gds_dtype=datatype,
+            gds_scale=gds_scale,
+        )
+        print("Creating rectangular carbon film from cavity GDS...")
+        print(f"  - GDS           : {self.cavity_gds}")
+        print(f"  - Thickness (z) : {self.carbon_thickness_um * 1e3:.3f} nm")
+        print(f"  - z slab_bounds : ({z0:.4f}, {z1:.4f}) µm")
+        print(f"  - Footprint (x) : {geom['xmax'] - geom['xmin']:.3f} µm")
+        print(f"  - Footprint (y) : {self.wg_width_um:.3f} µm")
+        bbox = self.carbon_box_geometry(geom)
+        print(
+            f"  - Bounding box  : size=({bbox.size[0]:.3f}, {bbox.size[1]:.3f}, "
+            f"{bbox.size[2]*1e3:.3f} nm)  center={tuple(round(c, 4) for c in bbox.center)}"
+        )
+        return td.Structure(
+            geometry=carbon_geo,
+            medium=self.carbon_medium,
+            name="carbon_film",
+        )
+
+    def _all_structures(self, geom: Dict) -> List[td.Structure]:
+        """Core + carbon (same GDS/holes) + air holes through the stack."""
+        structures: List[td.Structure] = [self.create_core_structure(geom)]
+        carbon = self.create_carbon_structure(geom)
+        if carbon is not None:
+            structures.append(carbon)
+        structures.extend(self.create_hole_structures(geom))
+        return structures
+
     def create_hole_structures(self, geom: Dict) -> List[td.Structure]:
         t = self.thickness_um
-        slab_bounds = (-t / 2 - 0.05, t / 2 + 0.05)
+        z_top = t / 2 + 0.05
+        if self.include_carbon:
+            z_top = t / 2 + self.carbon_thickness_um + 0.05
+        slab_bounds = (-t / 2 - 0.05, z_top)
         holes = [
             gdstk.ellipse(
                 (float(x_um), self.hole_center_y_um),
@@ -385,28 +482,47 @@ class SiVNanobeamSimulationSetup:
         )
         return [cartesian, kspace, angles]
 
-    def _grid_spec(self, min_steps_per_wvl: int, geom: Dict | None = None) -> td.GridSpec:
-        """Auto grid, optionally refined to ``core_mesh_dl_um`` in the cavity core.
+    def _grid_spec(
+        self, min_steps_per_wvl: int, geom: Dict | None = None
+    ) -> td.GridSpec:
+        """Auto grid with at most one fine-mesh override box.
 
-        Mirrors ``examples/NanobeamCavity.ipynb``: a MeshOverrideStructure box
-        (core_mesh_size_x_um x beam width x beam thickness) centred on the
-        cavity concentrates resolution where the mode lives. Note the smallest
-        cell also sets the FDTD time step, so a finer core grid increases the
-        step count proportionally."""
+        When ``fixed_grid_spec`` is set, that grid is reused unchanged.
+        """
+        if self.fixed_grid_spec is not None:
+            return self.fixed_grid_spec
+
         override_structures = []
-        if self.core_mesh_dl_um is not None and geom is not None:
-            dl = self.core_mesh_dl_um
-            core_box = td.Box(
-                center=(geom["cx"], geom["cy"], 0.0),
-                size=(
-                    min(self.core_mesh_size_x_um, geom["size_x"]),
-                    self.wg_width_um,
-                    self.thickness_um,
-                ),
+        if self.finemesh_dl_um is not None and geom is not None:
+            dl = float(self.finemesh_dl_um)
+            # Defaults match the previous core-only override box.
+            size_x = (
+                float(self.finemesh_size_x_um)
+                if self.finemesh_size_x_um is not None
+                else 4.0
             )
-            override_structures = [
-                td.MeshOverrideStructure(geometry=core_box, dl=(dl, dl, dl))
-            ]
+            size_x = min(size_x, geom["size_x"])
+            size_y = (
+                float(self.finemesh_size_y_um)
+                if self.finemesh_size_y_um is not None
+                else self.wg_width_um * 1.25
+            )
+            size_z = (
+                float(self.finemesh_size_z_um)
+                if self.finemesh_size_z_um is not None
+                else self.thickness_um * 1.25
+            )
+            fine_box = td.Box(
+                center=(geom["cx"], geom["cy"], 0.0),
+                size=(size_x, size_y, size_z),
+            )
+            override_structures.append(
+                td.MeshOverrideStructure(geometry=fine_box, dl=(dl, dl, dl))
+            )
+            print(
+                f"  - Fine mesh override: dl={dl*1e3:.2f} nm, "
+                f"size=({size_x:.3f}, {size_y:.3f}, {size_z:.3f}) µm"
+            )
         return td.GridSpec.auto(
             min_steps_per_wvl=min_steps_per_wvl,
             wavelength=self.wavelength_um,
@@ -436,8 +552,9 @@ class SiVNanobeamSimulationSetup:
         run_time_ps,
         min_steps_per_wvl,
         symmetry: Tuple[int, int, int] = (0, 0, 0),
+        shutoff: float | None = None,
     ):
-        return td.Simulation(
+        kwargs = dict(
             size=(geom["size_x"], geom["size_y"], geom["size_z"]),
             center=(geom["cx"], geom["cy"], geom["cz"]),
             grid_spec=self._grid_spec(min_steps_per_wvl, geom),
@@ -449,6 +566,9 @@ class SiVNanobeamSimulationSetup:
             medium=self.clad_medium,
             symmetry=symmetry,
         )
+        if shutoff is not None:
+            kwargs["shutoff"] = shutoff
+        return td.Simulation(**kwargs)
 
     def create_q_scout_simulation(
         self, run_time_ps=6.0, min_steps_per_wvl=14, symmetry=None
@@ -457,10 +577,9 @@ class SiVNanobeamSimulationSetup:
         if symmetry is None:
             symmetry = self.default_symmetry()
         geom = self.geometry_params()
-        structures = [self.create_core_structure(geom)] + self.create_hole_structures(
-            geom
-        )
+        structures = self._all_structures(geom)
         source, monitors = self.create_minimal_q_probe(geom)
+        # Scout keeps Tidy3D default shutoff (1e-5).
         sim = self._build(
             geom, structures, source, monitors, run_time_ps, min_steps_per_wvl, symmetry
         )
@@ -473,28 +592,38 @@ class SiVNanobeamSimulationSetup:
         min_steps_per_wvl=14,
         symmetry=None,
         with_farfield: bool = True,
+        shutoff: float = 1e-8,
     ) -> td.Simulation:
         """Full lock-in simulation with the 7-monitor characterization suite.
 
         Monitors: probe, flux, field_near, fld_3d_box, and (optionally) the
         three far-field projection monitors (Cartesian / k-space / angular).
+
+        ``shutoff`` defaults to ``1e-8`` (stricter than Tidy3D's ``1e-5``) so
+        high-Q ringdowns are not cut off after a few ps.
         """
         print("\nCreating full simulation (triangular core)...")
         if symmetry is None:
             symmetry = self.default_symmetry()
         geom = self.geometry_params()
-        structures = [self.create_core_structure(geom)] + self.create_hole_structures(
-            geom
-        )
+        structures = self._all_structures(geom)
         source, monitors = self.create_sources_and_monitors(geom)
         monitors = monitors + [self.create_mode_volume_monitor(geom)]
         if with_farfield:
             monitors = monitors + self.create_farfield_monitors(geom)
         sim = self._build(
-            geom, structures, source, monitors, run_time_ps, min_steps_per_wvl, symmetry
+            geom,
+            structures,
+            source,
+            monitors,
+            run_time_ps,
+            min_steps_per_wvl,
+            symmetry,
+            shutoff=shutoff,
         )
         print(
-            f"[OK] Full simulation ready (symmetry={symmetry}, monitors={len(monitors)})"
+            f"[OK] Full simulation ready (symmetry={symmetry}, "
+            f"monitors={len(monitors)}, shutoff={shutoff:g})"
         )
         return sim
 
@@ -557,6 +686,7 @@ def print_fdtd_summary(sim, setup, stage_label, min_steps_per_wvl):
     print(f"    Time step        : {sim.dt * 1e18:.3f} as")
     print(f"    Time steps       : {sim.num_time_steps:,}")
     print(f"    Run time         : {sim.run_time * 1e12:.1f} ps")
+    print(f"    Shutoff          : {sim.shutoff:g}")
     print(f"    Boundary         : PML all sides ({td.PML().num_layers} layers)")
 
     print(_terminal_color("  Source / monitors:", "1;33"))

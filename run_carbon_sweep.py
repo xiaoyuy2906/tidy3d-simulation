@@ -69,7 +69,7 @@ SAVE_GEOMETRY_PLOTS = (
 
 # Films ≥ mesh dl so each is at least one cell thick (10 nm / 7.5 nm ≈ 1.3 cells).
 # Filling in the sweep: 15nm and 25nm (10/20/30/40 already covered separately).
-CARBON_THICKNESSES_UM = (0.015, 0.025)  # 15, 25 nm
+CARBON_THICKNESSES_UM = (0.010, 0.015, 0.020, 0.025, 0.030)  # 15, 25 nm
 WITH_K_CASES = (False,)  # lossless carbon only for now; add True later for κ comparison
 
 SWEEP_ROOT = RESULTS_DIR / "carbon_sweep"

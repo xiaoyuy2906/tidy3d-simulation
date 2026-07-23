@@ -9,11 +9,16 @@ wheels/
 # Virtual environments
 .venv
 
-# Secrets — holds TIDY3D_API_KEY, read by siv_cavity.config.load_project_env
-.env
+# Secrets — holds TIDY3D_API_KEY, read by siv_cavity.config.load_project_env.
+# Glob, not an exact name: plain `.env` would still allow .env.local/.env.bak.
+.env*
+!.env.example
 
-# IDE (PyCharm / IntelliJ) — local editor settings, not needed for the project
+# Editor / tool state
 .idea/
+.vscode/
+.claude/settings.local.json
+.ipynb_checkpoints/
 
 # ── Simulation outputs ───────────────────────────────────────────────────────
 # Everything under data/results/ is produced by the run_*.py drivers: solver
@@ -37,5 +42,3 @@ examples/
 # Carries its own stale inline copy of siv_cavity.simulation — kept locally as
 # a scratchpad, but it diverges from the package and should not be published.
 SiV_cavity_base_notebook.ipynb
-
-settings.json

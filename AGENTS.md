@@ -6,8 +6,11 @@ This repo is a small [`uv`](https://docs.astral.sh/uv/)-managed Python 3.12 proj
 Tidy3D photonic-crystal (nanobeam) cavity FDTD simulations. Dependencies are `tidy3d` +
 `gdstk` (+ scientific stack) declared in `pyproject.toml` and pinned in `uv.lock`.
 
-Main pieces:
-- `examples/*.ipynb`, `NanobeamCavity.ipynb`, `SiV_cavity_base_notebook.ipynb` — notebooks.
+Main pieces (note: the notebooks under `examples/` and `SiV_cavity_base_notebook.ipynb`
+are git-ignored — they exist only in a local working copy, not in a fresh clone.
+`SiV_cavity_base_notebook.ipynb` in particular carries a stale inline copy of
+`SiVNanobeamSimulationSetup` that has diverged from the package; do not treat it
+as a reference for how the code works):
 - `siv_cavity/` package — the reusable SiV-cavity code: `geometry.py` (nanobeam + GDS),
   `materials.py` (diamond/air media), `simulation.py` (`SiVNanobeamSimulationSetup`, triangular
   core, monitors, symmetry), `analysis.py` (`extract_resonance` via `ResonanceFinder`), `config.py`.
@@ -24,8 +27,8 @@ Main pieces:
 - Execute any Python against the project env with `uv run python ...`, e.g.
  `uv run python run_scout.py` (needs Tidy3D credentials for the final cloud submit step).
 - Jupyter is intentionally **not** a project dependency. Run it on demand without editing
- `pyproject.toml`, e.g. `uv run --with jupyterlab jupyter lab` (interactive) or
- `uv run --with jupyterlab jupyter nbconvert --to notebook --execute examples/NanobeamCavity.ipynb`.
+ `pyproject.toml`, e.g. `uv run --with jupyterlab jupyter lab` (interactive). Notebook
+ paths under `examples/` are not present in a clone — see the note above.
 
 ### Tidy3D cloud (important gotcha)
 - Tidy3D is a **cloud** FDTD solver. Any `tidy3d.web` call (`web.test`, `web.upload`,

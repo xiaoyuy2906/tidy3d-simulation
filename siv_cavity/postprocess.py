@@ -2,7 +2,8 @@
 
 Ports sections 5 (ringdown visualisation), 7 (near-field mode analysis) and
 8 (mode volume / Purcell enhancement) of
-``examples/DiamondPhotonicCrystalCavity.ipynb`` into reusable functions that
+the Community Library notebook this project is based on (see README, Origin)
+into reusable functions that
 operate on ``td.SimulationData`` — either fresh from ``web.run`` or reloaded
 from disk with ``td.SimulationData.from_file``.
 

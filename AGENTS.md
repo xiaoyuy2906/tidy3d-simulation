@@ -15,7 +15,9 @@ as a reference for how the code works):
   `materials.py` (diamond/air media), `simulation.py` (`SiVNanobeamSimulationSetup`, triangular
   core, monitors, symmetry), `analysis.py` (`extract_resonance` via `ResonanceFinder`), `config.py`.
 - `run_scout.py` — single broadband scout run. `run_lockin.py` — two-stage scout→resonance→
-  narrowband lock-in Q workflow (7-monitor suite), mirroring the diamond example (sections 5-6).
+  narrowband lock-in Q workflow, mirroring sections 5-6 of the Community Library
+  notebook this project derives from (see README, Origin). That notebook is
+  git-ignored under `examples/`, so it is not present in a clone.
 
 ### Environment
 - `uv` is installed at `~/.local/bin/uv` and is on the login-shell `PATH` (added to `~/.bashrc`).

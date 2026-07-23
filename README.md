@@ -5,6 +5,22 @@ in diamond, built on [Tidy3D](https://www.flexcompute.com/tidy3d/). The cavity
 has a triangular (apex-down) cross-section, the profile left by angled etching
 of bulk diamond.
 
+## Origin
+
+This project started from the Tidy3D Community Library notebook
+**"Fabrication-aware modeling of a diamond nanobeam photonic crystal cavity"**
+by Alessandro Buzzi (MIT), MIT-licensed, which accompanies
+[arXiv:2601.20025](https://arxiv.org/abs/2601.20025).
+
+Taken from it: the two-stage broadband-search → narrowband-characterization
+workflow, the `ResonanceFinder` ringdown fit for Q, and the mode-volume /
+Purcell / far-field post-processing.
+
+Changed here: the notebook targets the **tin-vacancy (SnV)** range, this
+project the **silicon-vacancy (SiV)** range; the self-contained notebook has
+been refactored into the reusable `siv_cavity` package with scripted drivers;
+and the geometry uses a triangular cross-section with a carbon overlayer.
+
 ## ⚠️ Tidy3D is a paid cloud solver
 
 `web.run` **spends FlexCredits**. Before running anything:

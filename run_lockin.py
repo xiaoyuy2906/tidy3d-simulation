@@ -2,7 +2,7 @@
 
 Stage 1 (scout): broadband Ey dipole, minimal probe monitor, symmetry-reduced
 domain. The ``ResonanceFinder`` locates the resonance wavelength and a first Q
-estimate (see ``examples/DiamondPhotonicCrystalCavity.ipynb`` section 5).
+estimate (see the source notebook, section 5; README, Origin).
 
 Stage 2 (lock-in): a narrowband source centred on the detected resonance with a
 2% bandwidth and the full 7-monitor suite (section 6). A longer run_time and a
@@ -56,9 +56,12 @@ FINE_MESH_SIZE_Z_UM = 0.55
 # Carbon box: same x/y footprint, thin z slab over the film.
 #
 # dz sets the Courant time step for the WHOLE domain, so it is the dominant cost
-# knob: 1 nm → dt 2.57 as (35.2 FlexCredits for the 5-case sweep), 2.5 nm →
-# dt 5.10 as (12.6 FC). 2.5 nm gives 1/2/3/4 cells through the 2.5/5/7.5/10 nm
-# films and relies on Tidy3D's subpixel averaging for the thinnest one.
+# knob — halving it roughly triples the price of the sweep.
+#
+# It is only a *request*: the mesher fits whole cells into the override box, so
+# the realised dz differs per film thickness and the thinnest film ends up on
+# the finest grid (and is the most expensive case). Read the realised value off
+# the grid report rather than assuming it equals this constant.
 CARBON_MESH_DL_Z_UM = 0.0025  # 2.5 nm
 CARBON_MESH_HEIGHT_FACTOR = 1.25
 

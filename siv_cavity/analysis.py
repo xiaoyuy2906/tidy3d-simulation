@@ -1,6 +1,7 @@
 """Cavity Q-factor extraction from the time-domain ringdown.
 
-Implements the Stage-5 workflow of ``examples/DiamondPhotonicCrystalCavity.ipynb``:
+Implements the Stage-5 workflow of the Community Library notebook this project
+is based on (see README, Origin):
 the Tidy3D ``ResonanceFinder`` (matrix-pencil / Prony method) decomposes the
 probe signal E_y(t) into a sum of decaying sinusoids
 

@@ -8,14 +8,34 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Secrets — holds TIDY3D_API_KEY, read by siv_cavity.config.load_project_env
 .env
 
 # IDE (PyCharm / IntelliJ) — local editor settings, not needed for the project
 .idea/
 
-# Large Tidy3D result caches
-tidy3d_SiV_diamond_photonic_cavity_runtime/data/results/*.hdf5
-tidy3d_SiV_diamond_photonic_cavity_runtime/data/results/carbon_sweep/
+# ── Simulation outputs ───────────────────────────────────────────────────────
+# Everything under data/results/ is produced by the run_*.py drivers: solver
+# caches (.hdf5), figures (.png) and per-sweep summaries (.csv/.json). None of
+# it is source, and the .hdf5 files run to tens of MB each.
+tidy3d_SiV_diamond_photonic_cavity_runtime/data/results/
 *.hdf5
-settings.json
+
+# The GDS files are regenerated on every run — every driver calls
+# generate_local_gds_from_specs(..., force=True), so they are outputs whose
+# bytes change run to run, not inputs.
+tidy3d_SiV_diamond_photonic_cavity_runtime/gds/
+
+# Local analysis of the measured devices: input CSVs, derived tables, figures.
 experiment_export/
+
+# Reference notebooks from the Tidy3D docs, plus their runtime data. Kept on
+# disk for reference; not part of this project's source.
+examples/
+
+# Carries its own stale inline copy of siv_cavity.simulation — kept locally as
+# a scratchpad, but it diverges from the package and should not be published.
+SiV_cavity_base_notebook.ipynb
+
+settings.json

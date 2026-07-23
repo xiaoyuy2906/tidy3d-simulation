@@ -42,3 +42,8 @@ examples/
 # Carries its own stale inline copy of siv_cavity.simulation — kept locally as
 # a scratchpad, but it diverges from the package and should not be published.
 SiV_cavity_base_notebook.ipynb
+
+# The original 100k-row carbon dispersion tables (6.6 MB). The tracked tables
+# are a 1000-row uniform subsample of these, which reproduces n at the scout
+# wavelength to 1.6e-8 relative. Kept locally as the provenance of that subset.
+siv_cavity/material/*_full100k.txt

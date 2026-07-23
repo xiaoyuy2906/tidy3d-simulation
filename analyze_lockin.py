@@ -32,6 +32,9 @@ from siv_cavity.geometry import (
 from siv_cavity.analysis import extract_resonance, print_resonance
 from siv_cavity.postprocess import run_full_analysis
 
+# Single source of truth for where run_lockin.py writes its two stages.
+from run_lockin import LOCKIN_HDF5, SCOUT_HDF5
+
 # Must match the source bandwidths used in run_lockin.py.
 SCOUT_BANDWIDTH_REL = 0.12
 LOCKIN_BANDWIDTH_REL = 0.02
@@ -63,8 +66,13 @@ def main():
     )
 
     # 2. Load the saved simulation data.
-    scout_path = RESULTS_DIR / "scout_opt.hdf5"
-    lockin_path = RESULTS_DIR / "lockin.hdf5"
+    # Take the paths from run_lockin rather than hard-coding them: this script
+    # used to read scout_opt.hdf5 / lockin.hdf5, which run_lockin has not
+    # written since it switched to the *_baseline names. Both stale files are
+    # still on disk (Jul 14/16, an older mesh generation), so the script ran to
+    # completion and reported week-old numbers as if they were current.
+    scout_path = SCOUT_HDF5
+    lockin_path = LOCKIN_HDF5
     for p in (scout_path, lockin_path):
         if not p.exists():
             raise FileNotFoundError(f"{p} not found — run run_lockin.py first.")

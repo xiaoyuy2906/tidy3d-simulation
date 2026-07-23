@@ -41,11 +41,16 @@ class SiVNanobeamSimulationSetup:
         include_carbon: bool = False,
         carbon_thickness_um: float = 0.0,
         carbon_medium: td.Medium | None = None,
-        # Single fine-mesh override (used with or without carbon).
+        # Coarse fine-mesh override over the cavity centre (with or without carbon).
         finemesh_dl_um: float | None = None,
         finemesh_size_x_um: float | None = None,  # default: min(4.0, domain size_x)
-        finemesh_size_y_um: float | None = None,  # default: wg_width
-        finemesh_size_z_um: float | None = None,  # default: thickness * 1.05
+        finemesh_size_y_um: float | None = None,  # default: wg_width * 1.25
+        finemesh_size_z_um: float | None = None,  # default: thickness * 1.25
+        # Second override confined to the carbon film: same x/y footprint as the
+        # coarse box, but a thin z slab resolved at ``carbonmesh_dl_z_um``.
+        carbonmesh_dl_z_um: float | None = None,
+        carbonmesh_height_factor: float = 1.25,
+        carbonmesh_ref_thickness_um: float | None = None,
         fixed_grid_spec: td.GridSpec | None = None,
     ):
         self.cavity_gds = str(cavity_gds)
@@ -83,7 +88,26 @@ class SiVNanobeamSimulationSetup:
         self.finemesh_size_z_um = (
             None if finemesh_size_z_um is None else float(finemesh_size_z_um)
         )
+        self.carbonmesh_dl_z_um = (
+            None if carbonmesh_dl_z_um is None else float(carbonmesh_dl_z_um)
+        )
+        self.carbonmesh_height_factor = float(carbonmesh_height_factor)
+        # Lets the bare-cavity baseline build the same carbon override box even
+        # though it carries no carbon film, so its grid matches the sweep cases.
+        self.carbonmesh_ref_thickness_um = (
+            None
+            if carbonmesh_ref_thickness_um is None
+            else float(carbonmesh_ref_thickness_um)
+        )
         self.fixed_grid_spec = fixed_grid_spec
+        # The carbon override box is built inside the coarse-box branch of
+        # _grid_spec (it reuses that box's x/y footprint), so asking for a fine
+        # dz without a coarse box would silently do nothing at all.
+        if self.carbonmesh_dl_z_um is not None and self.finemesh_dl_um is None:
+            raise ValueError(
+                "carbonmesh_dl_z_um requires finemesh_dl_um: the carbon override "
+                "shares the coarse box's x/y footprint and is skipped without it."
+            )
         self.f0_center = c0_m_per_s / (self.wavelength_um * 1e-6)
         if self.include_carbon:
             if self.carbon_medium is None:
@@ -482,10 +506,26 @@ class SiVNanobeamSimulationSetup:
         )
         return [cartesian, kspace, angles]
 
+    def carbonmesh_thickness_um(self) -> float:
+        """Film thickness the carbon override box is sized from.
+
+        Falls back to ``carbonmesh_ref_thickness_um`` so a carbon-free baseline
+        run can still build the same box and land on a comparable grid.
+        """
+        if self.include_carbon and self.carbon_thickness_um > 0.0:
+            return self.carbon_thickness_um
+        return self.carbonmesh_ref_thickness_um or 0.0
+
     def _grid_spec(
         self, min_steps_per_wvl: int, geom: Dict | None = None
     ) -> td.GridSpec:
-        """Auto grid with at most one fine-mesh override box.
+        """Auto grid with up to two fine-mesh override boxes.
+
+        The coarse box covers the cavity centre; the optional carbon box shares
+        its x/y footprint but is a thin z slab over the film, resolved at
+        ``carbonmesh_dl_z_um``. The carbon box is appended **last** on purpose:
+        with ``shadow=True`` (the default) the later override wins in the
+        overlap region, which is what puts the fine dz inside the coarse box.
 
         When ``fixed_grid_spec`` is set, that grid is reused unchanged.
         """
@@ -495,7 +535,8 @@ class SiVNanobeamSimulationSetup:
         override_structures = []
         if self.finemesh_dl_um is not None and geom is not None:
             dl = float(self.finemesh_dl_um)
-            # Defaults match the previous core-only override box.
+            # Fallbacks below are unreachable from the current call sites, which
+            # always pass all four finemesh_* values together via FINE_MESH_KW.
             size_x = (
                 float(self.finemesh_size_x_um)
                 if self.finemesh_size_x_um is not None
@@ -523,6 +564,36 @@ class SiVNanobeamSimulationSetup:
                 f"  - Fine mesh override: dl={dl*1e3:.2f} nm, "
                 f"size=({size_x:.3f}, {size_y:.3f}, {size_z:.3f}) µm"
             )
+
+            t_film = self.carbonmesh_thickness_um()
+            if self.carbonmesh_dl_z_um is not None and t_film > 0.0:
+                dl_z = float(self.carbonmesh_dl_z_um)
+                box_h = self.carbonmesh_height_factor * t_film
+                # Centre on the film, which sits on the diamond top facet.
+                z_film = self.thickness_um / 2.0
+                z_center = z_film + 0.5 * t_film
+                carbon_box = td.Box(
+                    center=(geom["cx"], geom["cy"], z_center),
+                    size=(size_x, size_y, box_h),
+                )
+                # x/y are given explicitly rather than None purely for clarity —
+                # Mesher.filter_structures_effective_dl drops an override from an
+                # axis whose dl is None, so the coarse box would govern x/y either
+                # way (verified: dl=(None, None, dl_z) yields an identical grid).
+                override_structures.append(
+                    td.MeshOverrideStructure(geometry=carbon_box, dl=(dl, dl, dl_z))
+                )
+                # dl_z is only a *request*: the mesher fits a whole number of
+                # cells into box_h and blends with the surrounding grid, so the
+                # realised dz differs per case (measured 1.56/2.08/2.34/2.08 nm
+                # for the 2.5/5/7.5/10 nm films — the thinnest film ends up on
+                # the finest grid). The realised value cannot be predicted here;
+                # measure it off ``sim.grid`` once the simulation is built.
+                print(
+                    f"  - Carbon mesh override: dl_z={dl_z*1e3:.2f} nm requested, "
+                    f"height={box_h*1e3:.2f} nm ({self.carbonmesh_height_factor:g}× "
+                    f"{t_film*1e3:g} nm film), z_center={z_center:.5f} µm"
+                )
         return td.GridSpec.auto(
             min_steps_per_wvl=min_steps_per_wvl,
             wavelength=self.wavelength_um,

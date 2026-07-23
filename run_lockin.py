@@ -40,19 +40,35 @@ SCOUT_RUN_TIME_PS = 8.0
 SCOUT_STEPS_PER_WVL = 12
 SCOUT_BANDWIDTH_REL = 0.12
 LOCKIN_RUN_TIME_PS = 15.0
-LOCKIN_STEPS_PER_WVL = 25
+LOCKIN_STEPS_PER_WVL = 18
 LOCKIN_BANDWIDTH_REL = 0.02
 
-# Single fine-mesh override — lock-in only (scout uses AutoGrid alone).
-FINE_MESH_DL_UM = 0.0075  # 7.5 nm
+# Two fine-mesh overrides — lock-in only (scout uses AutoGrid alone).
+#
+# Coarse box over the cavity centre. 15 nm is deliberately close to the AutoGrid
+# cell in diamond at 18 steps/λ (λ/n/18 = 17.0 nm), so it mainly regularises the
+# grid rather than refining it.
+FINE_MESH_DL_UM = 0.015  # 15 nm
 FINE_MESH_SIZE_X_UM = 3.0
 FINE_MESH_SIZE_Y_UM = 0.75
 FINE_MESH_SIZE_Z_UM = 0.55
+
+# Carbon box: same x/y footprint, thin z slab over the film.
+#
+# dz sets the Courant time step for the WHOLE domain, so it is the dominant cost
+# knob: 1 nm → dt 2.57 as (35.2 FlexCredits for the 5-case sweep), 2.5 nm →
+# dt 5.10 as (12.6 FC). 2.5 nm gives 1/2/3/4 cells through the 2.5/5/7.5/10 nm
+# films and relies on Tidy3D's subpixel averaging for the thinnest one.
+CARBON_MESH_DL_Z_UM = 0.0025  # 2.5 nm
+CARBON_MESH_HEIGHT_FACTOR = 1.25
+
 FINE_MESH_KW = dict(
     finemesh_dl_um=FINE_MESH_DL_UM,
     finemesh_size_x_um=FINE_MESH_SIZE_X_UM,
     finemesh_size_y_um=FINE_MESH_SIZE_Y_UM,
     finemesh_size_z_um=FINE_MESH_SIZE_Z_UM,
+    carbonmesh_dl_z_um=CARBON_MESH_DL_Z_UM,
+    carbonmesh_height_factor=CARBON_MESH_HEIGHT_FACTOR,
 )
 
 # Geometry matching the carbon sweep.
@@ -76,6 +92,9 @@ def build_setup(
     finemesh_size_x_um=None,
     finemesh_size_y_um=None,
     finemesh_size_z_um=None,
+    carbonmesh_dl_z_um=None,
+    carbonmesh_height_factor=1.25,
+    carbonmesh_ref_thickness_um=None,
     include_carbon=False,
     carbon_thickness_um=0.0,
     carbon_medium=None,
@@ -104,6 +123,9 @@ def build_setup(
         finemesh_size_x_um=finemesh_size_x_um,
         finemesh_size_y_um=finemesh_size_y_um,
         finemesh_size_z_um=finemesh_size_z_um,
+        carbonmesh_dl_z_um=carbonmesh_dl_z_um,
+        carbonmesh_height_factor=carbonmesh_height_factor,
+        carbonmesh_ref_thickness_um=carbonmesh_ref_thickness_um,
         fixed_grid_spec=fixed_grid_spec,
     )
 
@@ -132,6 +154,11 @@ def main():
         f"dl={FINE_MESH_DL_UM*1e3:.1f} nm, "
         f"size=({FINE_MESH_SIZE_X_UM}, {FINE_MESH_SIZE_Y_UM}, {FINE_MESH_SIZE_Z_UM}) µm; "
         f"end_wg={END_WG_LENGTH_UM:g} µm"
+    )
+    print(
+        "  NOTE: this bare-cavity run carries no carbon override box, so its grid "
+        "differs\n        from the carbon sweep cases. For a Δλ baseline matched to "
+        "the sweep mesh,\n        run run_carbon_sweep.py with thickness 0.0 instead."
     )
 
     # 1. Design cavity + GDS (same geometry as carbon sweep)

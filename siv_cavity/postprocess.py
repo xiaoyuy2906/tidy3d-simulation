@@ -256,7 +256,10 @@ def compute_confinement(
             above = coords[pn > np.exp(-2)]
             w = (above[-1] - above[0]) / 2 if len(above) > 1 else np.nan
         results[f"w_{axis_label}_um"] = w
-        results[f"fwhm_{axis_label}_nm"] = 2 * np.sqrt(2 * np.log(2)) * w * 1e3
+        # gaussian_1d is A·exp(-2(x-x0)²/w²), so w is the 1/e² HALF-width and
+        # FWHM = √(2·ln2)·w = 1.1774·w. The σ→FWHM factor 2√(2·ln2) belongs to
+        # exp(-x²/2σ²) and was giving a FWHM exactly 2× too large.
+        results[f"fwhm_{axis_label}_nm"] = np.sqrt(2 * np.log(2)) * w * 1e3
 
     # Coordinate-aware integration: the monitor grid is non-uniform when a
     # mesh override refines the cavity core, so integrate on the actual axes.
